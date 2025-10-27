@@ -7,7 +7,7 @@ const PORT = process.env.PORT || 3000;
 
 // Esta es la URL REAL de la API con tu token
 // (Basado en los archivos que me diste)
-const GTFS_RT_URL = "https://datamanager.dtpr.transapp.cl/data/gtfs-rt/chillan.proto?apikey=" + process.env.GTFS_RT_URL;
+const GTFS_RT_URL = process.env.GTFS_RT_URL;
 
 let cachedBusBuffer = null; // Aquí guardaremos el archivo binario
 
