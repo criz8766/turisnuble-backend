@@ -1,62 +1,52 @@
 import express from 'express';
 import axios from 'axios';
 import cors from 'cors';
-// Importa la librería GTFS-RT
-import GtfsRealtimeBindings from 'gtfs-realtime-bindings'; 
 
-// --- CONFIGURACIÓN ---
 const app = express();
 const PORT = process.env.PORT || 3000;
-const GTFS_RT_URL = process.env.GTFS_RT_URL;
 
-// Esta variable guardará los datos YA CONVERTIDOS a JSON
-let cachedBusDataJson = { "message": "Aún no se han cargado los datos." };
+// Esta es la URL REAL de la API con tu token
+// (Basado en los archivos que me diste)
+const GTFS_RT_URL = "https://datamanager.dtpr.transapp.cl/data/gtfs-rt/chillan.proto?apikey=9f057ee0-3807-4340-aefa-17553326eec0";
 
-// --- FUNCIÓN QUE ACTUALIZA LOS DATOS ---
+let cachedBusBuffer = null; // Aquí guardaremos el archivo binario
+
 async function fetchAndCacheData() {
-  if (!GTFS_RT_URL) {
-    console.error("Error: La variable de entorno GTFS_RT_URL no está definida.");
-    cachedBusDataJson = { error: "Configuración del servidor incompleta." };
-    return;
-  }
-
-  console.log("Buscando datos GTFS-RT (protobuf) de la API de Chillán...");
+  console.log("Buscando datos .proto de la API de Chillán...");
   try {
-    // 1. Llama a la API de Chillán y pide la respuesta como 'arraybuffer' (datos binarios)
     const response = await axios.get(GTFS_RT_URL, {
-      responseType: 'arraybuffer' // <-- MUY IMPORTANTE: pedir datos binarios
+      responseType: 'arraybuffer' // ¡MUY IMPORTANTE: pedimos el archivo binario!
     });
-
-    // 2. Convierte los datos protobuf binarios a un objeto JavaScript (JSON)
-    const feed = GtfsRealtimeBindings.transit_realtime.FeedMessage.decode(new Uint8Array(response.data));
     
-    // 3. Guarda el objeto JSON en la caché
-    cachedBusDataJson = feed; 
-    console.log("¡Éxito! Datos Protobuf decodificados y guardados en memoria como JSON.");
-    // console.log("Número de entidades:", feed.entity?.length); // Para depurar
-
+    cachedBusBuffer = response.data; // Guardamos el archivo binario en la caché
+    console.log("¡Éxito! Buffer .proto actualizado en memoria.");
+    
   } catch (error) {
-    console.error("Error durante el fetch o decodificación:", error.message);
-    // Si falla, mantenemos los datos antiguos en caché
+    console.error("Error al buscar datos .proto:", error.message);
   }
 }
 
-// --- CONFIGURACIÓN DEL SERVIDOR ---
 app.use(cors());
 
-app.get('/', (req, res) => {
-  res.send('Servidor de Turisnuble RT funcionando.');
+// ¡Importante! Escuchamos en la *misma ruta* que tu app espera: "data/gtfs-rt/chillan.proto"
+app.get('/data/gtfs-rt/chillan.proto', (req, res) => {
+  if (cachedBusBuffer) {
+    // Le decimos al navegador/app que esto es un archivo protobuf
+    res.set('Content-Type', 'application/x-protobuf');
+    res.send(cachedBusBuffer); // Enviamos el archivo binario
+  } else {
+    // Si la caché aún está vacía (recién partiendo el servidor)
+    res.status(503).send("El servidor está cargando los datos iniciales. Intenta de nuevo en 30 segundos.");
+  }
 });
 
-// Endpoint de buses (Ahora devolverá JSON)
-app.get('/buses_rt', (req, res) => {
-  // Devuelve el objeto JSON que tenemos en memoria
-  res.json(cachedBusDataJson); 
-});
+// Ruta simple para verificar que el servidor está vivo
+app.get('/', (req, res) => res.send('Servidor Proxy GTFS-RT de Turisnuble funcionando.'));
 
-// --- INICIO DEL SERVIDOR ---
+// Inicia el servidor
 app.listen(PORT, () => {
   console.log(`Servidor escuchando en el puerto ${PORT}`);
-  fetchAndCacheData(); // Primera carga
-  setInterval(fetchAndCacheData, 60000); // Actualizar cada minuto
+  fetchAndCacheData(); // Carga los datos la primera vez
+  // Actualiza los datos cada 30 segundos (justo como la API)
+  setInterval(fetchAndCacheData, 30000); 
 });
